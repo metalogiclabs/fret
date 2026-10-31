@@ -67,6 +67,21 @@ No upstream contact or PR is authorized by this branch.
   The published FSM case-study control produces the same `Bool` → `_` type change for `standby`, while Ogma still emits it as an external stream.
 - [Isolated native GHC run 41242957839](https://github.com/metalogiclabs/fret/actions/runs/41242957839), commit `8e929d4339969f4dcb2a3cde8c3bd7f0e814f985`, succeeded as an **expected-negative control**. Artifact [13057968530](https://github.com/metalogiclabs/fret/actions/runs/41242957839/artifacts/13057968530) holds the extracted declarations and compiler logs. Both source lines were copied verbatim from native Ogma output into tiny self-contained `Stream` stubs; no Copilot libraries were needed. GHC 9.2.8: mapped exit `0`, unmapped exit `1`, with `Found type wildcard '_'` and a diagnostic requiring `PartialTypeSignatures`.
 - Source-reexecuting the naturally initialized sensor case produces **byte-identical JSON** to the inputs from the pinned native Ogma run: unmapped SHA-256 `5b11e0de630e4db120e3ceff34330cdcf19ee52a177df7d2c2806dc45f013de7`; mapped SHA-256 `cdca32ab8320a82deb90456e5b3470c8ca8a77e0defb82ef6f49939ce5848842`. This connects the supported UI code path to the earlier native/GHC results without changing either input's bytes.
+- [UI-default export + isolated GHC CI run 41245886916](https://github.com/metalogiclabs/fret/actions/runs/41245886916) passed the actual FRET variable-initializer assertions, both native-input SHA-256 equality checks, and the expected mapped-pass/unmapped-fail GHC control. This avoids relying on the earlier artificial `completed:false` Input fixture.
+
+FRET's Analysis Portal manual expressly allows Copilot export *without* variable
+mapping information and leaves that export button enabled. The tested state is
+therefore consistent with its documented workflow. The result is a generated
+code readiness / diagnostics **hazard**, not by itself proof that FRET should
+block export or that Ogma's fallback is unintentionally designed. The ownership
+and any repair need an explicit contract decision.
+
+Full-monitor type checking must use Copilot compatible with pinned Ogma's
+`ogma-core.cabal` requirements: both `copilot-language` and
+`copilot-libraries` must be at least 4.7.1 and less than 4.9. Ubuntu's distro
+packages at version `4.6.1` cannot serve as a
+mapped control: the generated import modules are not all provided. A complete
+program check is a separate gate from the declaration-level GHC result.
 
 This is concrete evidence that a documented incomplete FRET mapping can pass
 native Ogma generation while producing a type declaration rejected by normal
