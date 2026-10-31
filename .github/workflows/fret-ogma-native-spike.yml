@@ -34,7 +34,7 @@ jobs:
         uses: haskell-actions/setup@v2
         with:
           ghc-version: '9.2.8'
-          cabal-version: '3.6.2.0'
+          cabal-version: '3.14'
 
       - name: Install native Ogma prerequisites
         run: |
