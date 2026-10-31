@@ -186,7 +186,9 @@ jobs:
       - name: Install Copilot matching pinned Ogma's >=4.7.1 dependency floor
         run: |
           sudo apt-get update
-          sudo apt-get install -y alex happy pkg-config zlib1g-dev
+          sudo apt-get install -y alex happy pkg-config zlib1g-dev binutils binutils-gold
+          command -v ld
+          command -v ld.gold
           ghc --version
           cabal --version
           cabal update
