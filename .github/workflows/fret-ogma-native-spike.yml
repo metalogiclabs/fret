@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   generate-and-translate:
-    if: ${{ !contains(github.event.head_commit.message, 'ci: isolated GHC control') }}
+    if: "${{ !contains(github.event.head_commit.message, 'ci: isolated GHC control') }}"
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -80,7 +80,7 @@ jobs:
           if-no-files-found: warn
 
   isolated-ghc-control:
-    if: ${{ contains(github.event.head_commit.message, 'ci: isolated GHC control') }}
+    if: "${{ contains(github.event.head_commit.message, 'ci: isolated GHC control') }}"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
