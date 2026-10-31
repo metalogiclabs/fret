@@ -68,7 +68,7 @@ jobs:
             echo "$code" > "../research/fret-ogma-native/out/native/$scenario/exit-code.txt"
             echo "=== $scenario: Ogma exit code $code ==="
             tail -n 30 "../research/fret-ogma-native/out/native/$scenario/ogma.log"
-            rg -n --glob '*.hs' ':: Stream \(_\)' "../research/fret-ogma-native/out/native/$scenario/generated" || true
+            grep -RIn --include='*.hs' -F ':: Stream (_)' "../research/fret-ogma-native/out/native/$scenario/generated" || true
           done
 
       - name: Upload source-exported specimens and native results
