@@ -180,19 +180,21 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ghc libghc-copilot-c99-dev libghc-copilot-language-dev libghc-copilot-libraries-dev
-          ghc --version
-          ghc-pkg list copilot
+          # The hosted runner prepends a ghcup GHC (currently 9.14) to PATH.
+          # Ubuntu's libghc-* packages are registered against /usr/bin/ghc.
+          /usr/bin/ghc --version
+          /usr/bin/ghc-pkg list copilot
 
       - name: Type check full mapped and unmapped generated monitors
         shell: bash
         run: |
           mkdir -p research/fret-ogma-native/out/full-ghc
           set +e
-          ghc -fforce-recomp -fno-code \
+          /usr/bin/ghc -fforce-recomp -fno-code \
             research/fret-ogma-native/out/native/sensor-mapped/generated/Copilot.hs \
             > research/fret-ogma-native/out/full-ghc/mapped.log 2>&1
           mapped_code=$?
-          ghc -fforce-recomp -fno-code \
+          /usr/bin/ghc -fforce-recomp -fno-code \
             research/fret-ogma-native/out/native/sensor-unmapped/generated/Copilot.hs \
             > research/fret-ogma-native/out/full-ghc/unmapped.log 2>&1
           unmapped_code=$?
