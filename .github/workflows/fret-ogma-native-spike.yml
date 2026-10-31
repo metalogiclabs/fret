@@ -1,0 +1,78 @@
+name: FRET to Ogma native translation spike
+
+on:
+  push:
+    branches:
+      - research/fret-ogma-native-20261101
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-and-translate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout FRET research branch
+        uses: actions/checkout@v4
+
+      - name: Checkout exact Ogma source revision
+        uses: actions/checkout@v4
+        with:
+          repository: nasa/ogma
+          ref: 08b384b4335cce324fac74577adc7f08e61b7cce
+          path: ogma-source
+
+      - name: Install EJS for the pinned FRET export templates
+        run: npm install --no-audit --no-fund --no-save --prefix research/fret-ogma-native ejs@3.1.9
+
+      - name: Source-execute FRET's Copilot export (four controlled inputs)
+        run: node research/fret-ogma-native/export-regression.mjs
+
+      - name: Configure Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.2.8'
+          cabal-version: '3.6.2.0'
+
+      - name: Install native Ogma prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libbz2-dev libexpat1-dev z3 alex happy
+          cabal update
+
+      - name: Build pinned Ogma executable
+        working-directory: ogma-source
+        run: cabal build ogma-cli:exe:ogma --jobs=2
+
+      - name: Translate all four FRET exports with Ogma standalone
+        shell: bash
+        working-directory: ogma-source
+        run: |
+          mkdir -p ../research/fret-ogma-native/out/native
+          for scenario in sensor-mapped sensor-unmapped fsm-mapped fsm-unmapped; do
+            mkdir -p "../research/fret-ogma-native/out/native/$scenario"
+            set +e
+            cabal run ogma-cli:exe:ogma -- standalone \
+              --input-format fcs \
+              --prop-format smv \
+              --input-file "../research/fret-ogma-native/out/$scenario.json" \
+              --target-dir "../research/fret-ogma-native/out/native/$scenario/generated" \
+              > "../research/fret-ogma-native/out/native/$scenario/ogma.log" 2>&1
+            code=$?
+            set -e
+            echo "$code" > "../research/fret-ogma-native/out/native/$scenario/exit-code.txt"
+            echo "=== $scenario: Ogma exit code $code ==="
+            tail -n 30 "../research/fret-ogma-native/out/native/$scenario/ogma.log"
+            rg -n --glob '*.hs' ':: Stream \(_\)' "../research/fret-ogma-native/out/native/$scenario/generated" || true
+          done
+
+      - name: Upload source-exported specimens and native results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fret-ogma-native-spike
+          path: research/fret-ogma-native/out/
+          if-no-files-found: warn
+
