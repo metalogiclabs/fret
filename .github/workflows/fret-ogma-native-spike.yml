@@ -160,7 +160,7 @@ jobs:
   full-generated-monitor-ghc:
     if: "${{ contains(github.event.head_commit.message, 'ci: full monitor') }}"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 55
     permissions:
       contents: read
       actions: read
@@ -176,25 +176,34 @@ jobs:
           github-token: ${{ github.token }}
           path: research/fret-ogma-native/out
 
-      - name: Install GHC and distribution Copilot libraries
+      - name: Configure supported GHC and Cabal
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.2.8'
+          cabal-version: '3.14'
+          cabal-update: false
+
+      - name: Install Copilot matching pinned Ogma's >=4.7.1 dependency floor
         run: |
           sudo apt-get update
-          sudo apt-get install -y ghc libghc-copilot-c99-dev libghc-copilot-language-dev libghc-copilot-libraries-dev
-          # The hosted runner prepends a ghcup GHC (currently 9.14) to PATH.
-          # Ubuntu's libghc-* packages are registered against /usr/bin/ghc.
-          /usr/bin/ghc --version
-          /usr/bin/ghc-pkg list copilot
+          sudo apt-get install -y alex happy pkg-config zlib1g-dev
+          ghc --version
+          cabal --version
+          cabal update
+          cabal v2-install --lib --jobs=2 --disable-optimization \
+            copilot-4.7.1 copilot-c99-4.7.1 \
+            copilot-language-4.7.1 copilot-libraries-4.7.1
 
       - name: Type check full mapped and unmapped generated monitors
         shell: bash
         run: |
           mkdir -p research/fret-ogma-native/out/full-ghc
           set +e
-          /usr/bin/ghc -fforce-recomp -fno-code \
+          ghc -fforce-recomp -fno-code \
             research/fret-ogma-native/out/native/sensor-mapped/generated/Copilot.hs \
             > research/fret-ogma-native/out/full-ghc/mapped.log 2>&1
           mapped_code=$?
-          /usr/bin/ghc -fforce-recomp -fno-code \
+          ghc -fforce-recomp -fno-code \
             research/fret-ogma-native/out/native/sensor-unmapped/generated/Copilot.hs \
             > research/fret-ogma-native/out/full-ghc/unmapped.log 2>&1
           unmapped_code=$?
