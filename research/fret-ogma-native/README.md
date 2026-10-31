@@ -9,17 +9,24 @@ Pinned sources:
 - FRET: `NASA-SW-VnV/fret@cf0f913cc15c41705e803593297e89cd6056b839`
 - Ogma: `nasa/ogma@08b384b4335cce324fac74577adc7f08e61b7cce`
 
-The JavaScript probe executes the actual `FretModel.exportComponent` method
-and referenced variable-mapping helper bodies inside a test harness using the
-five FRET Copilot EJS templates and fixture databases. It **does not** run the
-Electron app or a real database. It produces four JSON exports:
+The JavaScript probe executes the actual FRET `createOrUpdateVariables`
+initializer, `FretModel.exportComponent` method, referenced variable-mapping
+helper bodies, and five Copilot EJS templates, with fixture databases. It also
+checks the actual Analysis Portal's unconditional Copilot export branch.
+It **does not** run Electron or a real database. It produces four JSON exports:
 
-| Scenario | Requirements | One variable's `completed` flag |
+| Scenario | Requirements | Variable state |
 | --- | --- | --- |
-| `sensor-mapped` | Synthetic `H(sensor_ok)` | `sensor_ok: true` |
-| `sensor-unmapped` | Identical | `sensor_ok: false` |
-| `fsm-mapped` | All 13 from published `caseStudies/FiniteStateMachine` | `standby: true` |
-| `fsm-unmapped` | Identical | `standby: false` |
+| `sensor-mapped` | Synthetic `H(sensor_ok)` | `Input`, `boolean`, `completed:true` |
+| `sensor-unmapped` | Identical | FRET's actual new-variable default: `idType:''`, `dataType:''`, `completed:false` |
+| `fsm-mapped` | All 13 from published `caseStudies/FiniteStateMachine` | Existing `standby.completed:true` |
+| `fsm-unmapped` | Identical | Only `standby.completed:false` (synthetic flag mutation) |
+
+Unlike an earlier exploratory fixture with a typed Input and artificially
+incomplete flag, the current negative sensor arm represents the naturally
+initialized state before a user fills in any mapping. FRET's normal variable
+save logic would mark a typed `boolean` Input complete. The FSM toggle remains
+an independent source-differential control, not a claim of UI reachability.
 
 The native workflow uses the current Ogma `standalone --input-format fcs
 --prop-format smv` interface to translate each output separately. Its result
@@ -59,6 +66,7 @@ No upstream contact or PR is authorized by this branch.
 
   The published FSM case-study control produces the same `Bool` → `_` type change for `standby`, while Ogma still emits it as an external stream.
 - [Isolated native GHC run 41242957839](https://github.com/metalogiclabs/fret/actions/runs/41242957839), commit `8e929d4339969f4dcb2a3cde8c3bd7f0e814f985`, succeeded as an **expected-negative control**. Artifact [13057968530](https://github.com/metalogiclabs/fret/actions/runs/41242957839/artifacts/13057968530) holds the extracted declarations and compiler logs. Both source lines were copied verbatim from native Ogma output into tiny self-contained `Stream` stubs; no Copilot libraries were needed. GHC 9.2.8: mapped exit `0`, unmapped exit `1`, with `Found type wildcard '_'` and a diagnostic requiring `PartialTypeSignatures`.
+- Source-reexecuting the naturally initialized sensor case produces **byte-identical JSON** to the inputs from the pinned native Ogma run: unmapped SHA-256 `5b11e0de630e4db120e3ceff34330cdcf19ee52a177df7d2c2806dc45f013de7`; mapped SHA-256 `cdca32ab8320a82deb90456e5b3470c8ca8a77e0defb82ef6f49939ce5848842`. This connects the supported UI code path to the earlier native/GHC results without changing either input's bytes.
 
 This is concrete evidence that a documented incomplete FRET mapping can pass
 native Ogma generation while producing a type declaration rejected by normal

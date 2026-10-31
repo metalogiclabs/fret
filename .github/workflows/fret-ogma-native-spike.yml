@@ -90,6 +90,26 @@ jobs:
       - name: Checkout research branch
         uses: actions/checkout@v4
 
+      - name: Checkout exact Ogma source revision for format assertions
+        uses: actions/checkout@v4
+        with:
+          repository: nasa/ogma
+          ref: 08b384b4335cce324fac74577adc7f08e61b7cce
+          path: ogma-source
+
+      - name: Install EJS for the source-executed FRET UI-default probe
+        run: npm install --no-audit --no-fund --no-save --prefix research/fret-ogma-native ejs@3.1.9
+
+      - name: Recreate UI-initialized exports and compare exact native-run input bytes
+        run: |
+          node research/fret-ogma-native/export-regression.mjs
+          printf '%s  %s\n' \
+            '5b11e0de630e4db120e3ceff34330cdcf19ee52a177df7d2c2806dc45f013de7' \
+            'research/fret-ogma-native/out/sensor-unmapped.json' | sha256sum -c -
+          printf '%s  %s\n' \
+            'cdca32ab8320a82deb90456e5b3470c8ca8a77e0defb82ef6f49939ce5848842' \
+            'research/fret-ogma-native/out/sensor-mapped.json' | sha256sum -c -
+
       - name: Retrieve native Ogma output from the pinned green generation run
         uses: actions/download-artifact@v4
         with:

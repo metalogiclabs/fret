@@ -49,6 +49,36 @@ const methodEnd = modelSource.indexOf('  async exportTestObligations', methodSta
 assert.ok(methodStart >= 0 && methodEnd > methodStart, 'FRET exportComponent found');
 const methodBody = modelSource.slice(methodStart, methodEnd);
 
+const variablesUi = read(path.join(fret, 'fret-electron/app/components/VariablesView.js'));
+assert.match(variablesUi, /if \(language === 'copilot'\)\{\s*return \(\s*<Tooltip/,
+  'Copilot has an unconditional export-button branch in the real UI');
+assert.match(variablesUi, /onClick=\{this\.exportComponentCode\}/);
+
+// Execute the actual variable initializer reached when a requirement first
+// introduces a signal. This is the naturally incomplete UI state, unlike an
+// inconsistent typed Input record with completed=false.
+const setterPath = path.join(fret, 'fret-electron/model/modelDbSupport/modelDbSetters_main.js');
+const setterSource = read(setterPath);
+const setterStart = setterSource.indexOf('function createOrUpdateVariables (');
+assert.ok(setterStart > 0, 'FRET model variable initializer found');
+async function initializeVariable(name, component, project) {
+  let complete;
+  const written = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(Error('FRET default variable not written')), 5000);
+    complete = doc => {clearTimeout(timeout); resolve(doc);};
+  });
+  const modelDB = {
+    get: async () => {throw {name:'not_found'};},
+    find: async () => ({docs: []}),
+    put(doc) {complete(doc); return Promise.resolve({ok:true});},
+  };
+  const context = {console, modelDB};
+  vm.runInNewContext(setterSource.slice(setterStart)
+    + '\n;globalThis.createVar=createOrUpdateVariables;', context, {filename:setterPath});
+  context.createVar([name], component, project, `R_${name}`);
+  return written;
+}
+
 // Read both the actual format and the native missing-identifier behavior.
 const format = read(path.join(ogma, 'ogma-core/data/formats/fcs_smv'));
 const extra = read(path.join(ogma, 'ogma-core/src/Data/Spec/Extra.hs'));
@@ -96,11 +126,14 @@ const sensorReq = [{
     ptExpanded: '(H sensor_ok)',
   },
 }];
-const sensor = {variable_name:'sensor_ok',component_name:'Controller',project:'Audit',
-  modeldoc:false,idType:'Input',dataType:'boolean'};
-const simpleMapped = await exportFixture([{...sensor, completed:true}],
+const sensor = await initializeVariable('sensor_ok','Controller','Audit');
+assert.equal(sensor.idType, '', 'unmapped arm must match a new FRET variable before mapping');
+assert.equal(sensor.dataType, '', 'unmapped arm must not invent type information');
+assert.equal(sensor.completed, false);
+assert.equal(sensor.modeldoc, false);
+const simpleMapped = await exportFixture([{...sensor,idType:'Input',dataType:'boolean',completed:true}],
   {component:'Controller',project:'Audit',requirementDocs:sensorReq});
-const simpleUnmapped = await exportFixture([{...sensor, completed:false}],
+const simpleUnmapped = await exportFixture([sensor],
   {component:'Controller',project:'Audit',requirementDocs:sensorReq});
 assert.deepEqual(simpleUnmapped.spec.Requirements, simpleMapped.spec.Requirements);
 assert.deepEqual(simpleMapped.spec.Other_variables.map(v => v.name), ['sensor_ok']);
@@ -142,5 +175,6 @@ console.log(JSON.stringify({
     requirements: spec.Requirements.length,
     externalVariables: spec.Other_variables.map(v => v.name)})),
   ogmaSourceObservation: 'missing identifiers are synthesized with empty type; check generated code and native behavior',
+  fretUIObservation: 'new requirement variables initialize with empty idType/dataType and completed=false; Copilot export UI branch is unconditional',
   output: destination,
 }, null, 2));
