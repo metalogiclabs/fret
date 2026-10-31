@@ -1,7 +1,7 @@
 # FRET → Ogma: bounded native-translation research
 
-Status: **WARRANTED, bounded native-generated declaration/type-hole differential**;
-not a complete end-to-end FRET-UI/Copilot-monitor build or an upstream fix.
+Status: **WARRANTED, bounded full-generated-monitor GHC type-check failure**;
+not a complete end-to-end FRET-UI/Copilot-C-build or an upstream fix.
 No issue or pull request is opened by this branch.
 
 Pinned sources:
@@ -68,6 +68,7 @@ No upstream contact or PR is authorized by this branch.
 - [Isolated native GHC run 41242957839](https://github.com/metalogiclabs/fret/actions/runs/41242957839), commit `8e929d4339969f4dcb2a3cde8c3bd7f0e814f985`, succeeded as an **expected-negative control**. Artifact [13057968530](https://github.com/metalogiclabs/fret/actions/runs/41242957839/artifacts/13057968530) holds the extracted declarations and compiler logs. Both source lines were copied verbatim from native Ogma output into tiny self-contained `Stream` stubs; no Copilot libraries were needed. GHC 9.2.8: mapped exit `0`, unmapped exit `1`, with `Found type wildcard '_'` and a diagnostic requiring `PartialTypeSignatures`.
 - Source-reexecuting the naturally initialized sensor case produces **byte-identical JSON** to the inputs from the pinned native Ogma run: unmapped SHA-256 `5b11e0de630e4db120e3ceff34330cdcf19ee52a177df7d2c2806dc45f013de7`; mapped SHA-256 `cdca32ab8320a82deb90456e5b3470c8ca8a77e0defb82ef6f49939ce5848842`. This connects the supported UI code path to the earlier native/GHC results without changing either input's bytes.
 - [UI-default export + isolated GHC CI run 41245886916](https://github.com/metalogiclabs/fret/actions/runs/41245886916) passed the actual FRET variable-initializer assertions, both native-input SHA-256 equality checks, and the expected mapped-pass/unmapped-fail GHC control. This avoids relying on the earlier artificial `completed:false` Input fixture.
+- [Full original generated-monitor GHC run 41246554279](https://github.com/metalogiclabs/fret/actions/runs/41246554279), commit `72721f64f902e16305439516a96499bdf26aaad4`, succeeded as an expected-negative control under GHC 9.2.8 and Copilot **4.7.1**, which satisfies pinned Ogma's dependency range. Artifact [13059633615](https://github.com/metalogiclabs/fret/actions/runs/41246554279/artifacts/13059633615) contains both compiler logs. The mapped **complete, unmodified** Ogma `Copilot.hs` type-checks (exit `0`), while the unmapped complete `Copilot.hs` fails (exit `1`) solely at the `Stream (_)` signature, with `Found type wildcard ‘_’ standing for ‘Bool’` and `To use the inferred type, enable PartialTypeSignatures`. This run performs GHC `-fno-code`, not C monitor generation or runtime execution.
 
 FRET's Analysis Portal manual expressly allows Copilot export *without* variable
 mapping information and leaves that export button enabled. The tested state is
@@ -84,11 +85,12 @@ mapped control: the generated import modules are not all provided. A complete
 program check is a separate gate from the declaration-level GHC result.
 
 This is concrete evidence that a documented incomplete FRET mapping can pass
-native Ogma generation while producing a type declaration rejected by normal
-GHC rules. It is **not** a whole-monitor compilation test: the GHC control
-extracts the actual generated declaration and stubs unrelated Copilot imports.
+native Ogma generation while producing a complete generated Copilot program
+rejected by ordinary GHC type checking. The original isolated GHC control
+extracts the actual declaration and stubs unrelated Copilot imports; the
+subsequent full-generated-monitor check does **not** alter the original files.
 It also does not prove a problem with the checked-in FSM case study as-is; the
 `standby.completed=false` state was introduced solely as a controlled test.
-Next residuals: supported FRET UI/database reproduction, full generated-monitor
-build, exact responsibility and smallest repair, then an independent duplicate
-check before considering upstream contact.
+Next residuals: supported FRET UI/database reproduction, generated-C build and
+runtime checks if warranted, exact responsibility and smallest repair, then an
+independent duplicate check before considering upstream contact.
