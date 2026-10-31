@@ -39,7 +39,9 @@ jobs:
       - name: Install native Ogma prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y libbz2-dev libexpat1-dev z3 alex happy
+          sudo apt-get install -y libbz2-dev libexpat1-dev z3 alex happy binutils binutils-gold
+          command -v ld
+          command -v ld.gold
           cabal update
 
       - name: Build pinned Ogma executable
