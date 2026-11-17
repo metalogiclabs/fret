@@ -1,0 +1,60 @@
+name: Research - FRET Lift+Cruise typed Boolean monitor bridge
+
+on:
+  push:
+    branches:
+      - research/fret-lpc-monitor-bridge-20261117
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned_fret_to_r2u2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out isolated research harness
+        uses: actions/checkout@v4
+        with:
+          path: lab
+          persist-credentials: false
+
+      - name: Check out immutable FRET v3.1 integration source
+        uses: actions/checkout@v4
+        with:
+          repository: NASA-SW-VnV/fret
+          ref: cf0f913cc15c41705e803593297e89cd6056b839
+          path: fret
+          persist-credentials: false
+
+      - name: Check out immutable R2U2 source
+        uses: actions/checkout@v4
+        with:
+          repository: R2U2/r2u2
+          ref: 2875a1dfc0b8cb27c4c4f14bece6b95c3afff91a
+          path: r2u2
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Qualify harness contract and native-verdict parser
+        run: python3 -m unittest discover -s lab/research -p test_fret_lpc_replay.py -v
+
+      - name: Build independent native R2U2 C99 monitor
+        run: make -C r2u2/monitors/c all
+
+      - name: Render original FRET source and replay C2PO monitor
+        run: python3 lab/research/fret_lpc_replay.py --fret fret --r2u2 r2u2 --out evidence/fret-lpc
+
+      - name: Preserve source, compiled configuration, verdicts and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fret-lpc-boolean-monitor-bridge-20261117
+          path: evidence/fret-lpc/
+          if-no-files-found: warn
+          retention-days: 30
