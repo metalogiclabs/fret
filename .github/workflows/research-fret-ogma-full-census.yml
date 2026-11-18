@@ -47,6 +47,8 @@ jobs:
 
       - name: Prove the property slicer preserves original formulas and contracts
         shell: bash
+        env:
+          FRET_SOURCE_DIR: ${{ github.workspace }}/fret
         run: |
           set -euo pipefail
           python3 -m unittest discover -s lab/research -p test_fret_ogma_full_census.py -v
