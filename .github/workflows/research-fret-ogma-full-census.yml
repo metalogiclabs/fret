@@ -1,0 +1,163 @@
+name: Research - pinned FRET full project native Ogma property census
+
+on:
+  push:
+    branches:
+      - research/fret-export-method-ogma-20261118
+    paths:
+      - .github/workflows/research-fret-ogma-full-census.yml
+      - research/fret_ogma_full_census.py
+      - research/test_fret_ogma_full_census.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native_census:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out research fork and pinned upstream sources
+        uses: actions/checkout@v4
+        with:
+          path: lab
+          persist-credentials: false
+
+      - name: Check out pinned NASA FRET
+        uses: actions/checkout@v4
+        with:
+          repository: NASA-SW-VnV/fret
+          ref: cf0f913cc15c41705e803593297e89cd6056b839
+          path: fret
+          persist-credentials: false
+
+      - name: Check out pinned NASA Ogma
+        uses: actions/checkout@v4
+        with:
+          repository: nasa/ogma
+          ref: 1f8355712aba76b4047ccb4b1f4cead1b6cdb42a
+          path: ogma-source
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Prove the property slicer preserves original formulas and contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s lab/research -p test_fret_ogma_full_census.py -v
+          node --test lab/research/test_fret_export_method.cjs
+
+      - name: Execute pinned FRET exportComponent and isolate all properties
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/full-census/method
+          node lab/research/run_fret_export_method.cjs --fret fret --out evidence/full-census/method \
+            2>&1 | tee evidence/full-census/fret-method.log
+          python3 lab/research/fret_ogma_full_census.py split \
+            --input evidence/full-census/method/method-full-project.json \
+            --out evidence/full-census/slices \
+            2>&1 | tee evidence/full-census/split.log
+          test "$(find evidence/full-census/slices -maxdepth 1 -name '[0-9]*.json' | wc -l)" -eq 57
+
+      - name: Configure GHC and Cabal
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.2.8'
+          cabal-version: '3.14'
+
+      - name: Install native Ogma prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libbz2-dev libexpat1-dev z3 alex happy pkg-config zlib1g-dev binutils binutils-gold
+          cabal update
+
+      - name: Build pinned NASA Ogma CLI
+        working-directory: ogma-source
+        run: cabal build ogma-cli:exe:ogma --jobs=2
+
+      - name: Establish original rejection and Boolean control translation
+        working-directory: ogma-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          ogma_bin="$(cabal list-bin ogma-cli:exe:ogma)"
+          test -x "$ogma_bin"
+          mkdir -p ../evidence/full-census/native/negative ../evidence/full-census/native/positive
+          rc=0
+          "$ogma_bin" standalone \
+            --input-format ogma-core/data/formats/fcs_lustre --prop-format lustre \
+            --input-file ../evidence/full-census/method/method-original.json \
+            --target-dir ../evidence/full-census/native/negative \
+            > ../evidence/full-census/native/negative.log 2>&1 || rc=$?
+          echo "$rc" > ../evidence/full-census/native/negative-exit.txt
+          if test "$rc" -eq 0; then
+            echo "Previously rejected original now translated; prior boundary must be revisited"
+            exit 1
+          fi
+          "$ogma_bin" standalone \
+            --input-format ogma-core/data/formats/fcs_lustre --prop-format lustre \
+            --input-file ../evidence/full-census/method/method-control.json \
+            --target-dir ../evidence/full-census/native/positive \
+            > ../evidence/full-census/native/positive.log 2>&1
+          test -f ../evidence/full-census/native/positive/Copilot.hs
+
+      - name: Translate all 57 properties jointly and one at a time
+        working-directory: ogma-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          ogma_bin="$(cabal list-bin ogma-cli:exe:ogma)"
+          results="../evidence/full-census/native"
+          mkdir -p "$results/full" "$results/per-property"
+          rc=0
+          "$ogma_bin" standalone \
+            --input-format ogma-core/data/formats/fcs_lustre --prop-format lustre \
+            --input-file ../evidence/full-census/method/method-full-project.json \
+            --target-dir "$results/full" \
+            > "$results/full.log" 2>&1 || rc=$?
+          echo "$rc" > "$results/full-exit.txt"
+          if test -f "$results/full/Copilot.hs"; then echo "1" > "$results/full-haskell.txt"
+          else echo "0" > "$results/full-haskell.txt"; fi
+
+          printf 'index\tfile\texit_code\tgenerated_haskell\n' > "$results/individual-status.tsv"
+          for sliced in ../evidence/full-census/slices/[0-9]*.json; do
+            filename="$(basename "$sliced")"
+            idx="$(printf '%s' "$filename" | cut -c 1-3)"
+            index="$((10#$idx))"
+            stem="$(printf '%s' "$filename" | sed 's/\.json$//')"
+            target="$results/per-property/$stem"
+            mkdir -p "$target"
+            rc=0
+            "$ogma_bin" standalone \
+              --input-format ogma-core/data/formats/fcs_lustre --prop-format lustre \
+              --input-file "$sliced" --target-dir "$target" \
+              > "$results/per-property/$stem.log" 2>&1 || rc=$?
+            generated=0
+            if test -f "$target/Copilot.hs"; then generated=1; fi
+            printf '%s\t%s\t%s\t%s\n' "$index" "$filename" "$rc" "$generated" \
+              >> "$results/individual-status.tsv"
+          done
+          python3 ../lab/research/fret_ogma_full_census.py report \
+            --manifest ../evidence/full-census/slices/slice-manifest.json \
+            --statuses "$results/individual-status.tsv" \
+            --out "$results/classification.json" \
+            2>&1 | tee "$results/classification-summary.log"
+          sha256sum ../evidence/full-census/method/method-full-project.json \
+            "$results/classification.json" | tee "$results/sha256.log"
+
+      - name: Archive complete census including failed cases
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fret-lpc-ogma-full-native-census-20261118
+          path: evidence/full-census/
+          if-no-files-found: warn
+          retention-days: 30
