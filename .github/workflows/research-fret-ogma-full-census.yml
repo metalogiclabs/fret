@@ -85,24 +85,14 @@ jobs:
         working-directory: ogma-source
         run: cabal build ogma-cli:exe:ogma --jobs=2
 
-      - name: Resolve exactly one built Ogma executable
-        working-directory: ogma-source
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 ../lab/research/fret_ogma_full_census.py locate \
-            --ogma-dir . --out ../evidence/full-census/native/ogma-bin-path.txt
-
       - name: Establish original rejection and Boolean control translation
         working-directory: ogma-source
         shell: bash
         run: |
           set -euo pipefail
-          ogma_bin="$(sed -n '1p' ../evidence/full-census/native/ogma-bin-path.txt)"
-          test -x "$ogma_bin"
           mkdir -p ../evidence/full-census/native/negative ../evidence/full-census/native/positive
           rc=0
-          "$ogma_bin" standalone \
+          cabal run ogma-cli:exe:ogma -- standalone \
             --input-format ogma-core/data/formats/fcs_lustre --prop-format lustre \
             --input-file ../evidence/full-census/method/method-original.json \
             --target-dir ../evidence/full-census/native/negative \
@@ -112,7 +102,7 @@ jobs:
             echo "Previously rejected original now translated; prior boundary must be revisited"
             exit 1
           fi
-          "$ogma_bin" standalone \
+          cabal run ogma-cli:exe:ogma -- standalone \
             --input-format ogma-core/data/formats/fcs_lustre --prop-format lustre \
             --input-file ../evidence/full-census/method/method-control.json \
             --target-dir ../evidence/full-census/native/positive \
@@ -124,12 +114,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ogma_bin="$(sed -n '1p' ../evidence/full-census/native/ogma-bin-path.txt)"
-          test -x "$ogma_bin"
           results="../evidence/full-census/native"
           mkdir -p "$results/full" "$results/per-property"
           rc=0
-          "$ogma_bin" standalone \
+          cabal run ogma-cli:exe:ogma -- standalone \
             --input-format ogma-core/data/formats/fcs_lustre --prop-format lustre \
             --input-file ../evidence/full-census/method/method-full-project.json \
             --target-dir "$results/full" \
@@ -147,7 +135,7 @@ jobs:
             target="$results/per-property/$stem"
             mkdir -p "$target"
             rc=0
-            "$ogma_bin" standalone \
+            cabal run ogma-cli:exe:ogma -- standalone \
               --input-format ogma-core/data/formats/fcs_lustre --prop-format lustre \
               --input-file "$sliced" --target-dir "$target" \
               > "$results/per-property/$stem.log" 2>&1 || rc=$?

@@ -104,6 +104,18 @@ class FullCensusTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             locate_ogma_binary(ogma)
 
+    def test_workflow_uses_cabal_runtime_for_every_native_translation(self):
+        """An uninstalled Ogma binary cannot find its runtime templates."""
+        workflow = (Path(__file__).resolve().parents[1]
+                    / ".github/workflows/research-fret-ogma-full-census.yml").read_text(
+                        encoding="utf-8"
+                    )
+        self.assertEqual(
+            workflow.count("cabal run ogma-cli:exe:ogma -- standalone"),
+            4,  # original negative, positive control, full, and per-property loop
+        )
+        self.assertNotIn('"$ogma_bin" standalone', workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
