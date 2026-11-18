@@ -5,11 +5,15 @@ on:
     branches:
       - research/fret-lpc-monitor-bridge-20261117
       - research/fret-ogma-lustre-control-20261118
+      - research/fret-export-method-ogma-20261118
     paths:
       - .github/workflows/research-fret-lpc-copilot-native.yml
       - research/fret_ogma_bridge.py
       - research/test_fret_ogma_bridge.py
       - research/fret_lpc_copilot_replay.c
+      - research/fret_export_method.cjs
+      - research/run_fret_export_method.cjs
+      - research/test_fret_export_method.cjs
   workflow_dispatch:
 
 permissions:
@@ -65,6 +69,21 @@ jobs:
             evidence/fret-ogma/control/LPC_REARPROP.ogma-lustre-control.json \
             | tee evidence/fret-ogma/input-sha256.log
 
+      - name: Execute actual pinned FRET exportComponent method and compare source fields
+        shell: bash
+        env:
+          FRET_SOURCE_DIR: ${{ github.workspace }}/fret
+        run: |
+          set -euo pipefail
+          node --test lab/research/test_fret_export_method.cjs
+          node lab/research/run_fret_export_method.cjs \
+            --fret fret --out evidence/fret-ogma/method \
+            --baseline evidence/fret-ogma/LPC_REARPROP.fret-copilot.json
+          sha256sum evidence/fret-ogma/method/method-original.json \
+            evidence/fret-ogma/method/method-control.json \
+            evidence/fret-ogma/method/method-full-project.json \
+            | tee evidence/fret-ogma/method/method-sha256.log
+
       - name: Configure supported GHC and Cabal
         uses: haskell-actions/setup@v2
         with:
@@ -103,6 +122,22 @@ jobs:
             exit 1
           fi
 
+          mkdir -p ../evidence/fret-ogma/method/original-generated
+          set +e
+          cabal run ogma-cli:exe:ogma -- standalone \
+            --input-format ogma-core/data/formats/fcs_lustre \
+            --prop-format lustre \
+            --input-file ../evidence/fret-ogma/method/method-original.json \
+            --target-dir ../evidence/fret-ogma/method/original-generated \
+            > ../evidence/fret-ogma/method/ogma-original.log 2>&1
+          method_status=$?
+          set -e
+          echo "Source-method Ogma exit: $method_status" | tee ../evidence/fret-ogma/method/original-exit.log
+          if test "$method_status" -eq 0; then
+            echo "Source-method original was accepted: dialect hypothesis must be revisited"
+            exit 1
+          fi
+
       - name: Positive control - translate equivalent Ogma-supported Boolean formula
         working-directory: ogma-source
         shell: bash
@@ -118,6 +153,17 @@ jobs:
           test -f ../evidence/fret-ogma/control/copilot-generated/Copilot.hs
           grep -F 'rearprop' ../evidence/fret-ogma/control/copilot-generated/Copilot.hs
           grep -F 'hover_control_mode' ../evidence/fret-ogma/control/copilot-generated/Copilot.hs
+
+          mkdir -p ../evidence/fret-ogma/method/copilot-generated
+          cabal run ogma-cli:exe:ogma -- standalone \
+            --input-format ogma-core/data/formats/fcs_lustre \
+            --prop-format lustre \
+            --input-file ../evidence/fret-ogma/method/method-control.json \
+            --target-dir ../evidence/fret-ogma/method/copilot-generated \
+            2>&1 | tee ../evidence/fret-ogma/method/ogma-control.log
+          test -f ../evidence/fret-ogma/method/copilot-generated/Copilot.hs
+          grep -F 'rearprop' ../evidence/fret-ogma/method/copilot-generated/Copilot.hs
+          grep -F 'hover_control_mode' ../evidence/fret-ogma/method/copilot-generated/Copilot.hs
 
       - name: Install pinned-major Copilot C99 libraries
         shell: bash
@@ -138,6 +184,14 @@ jobs:
           )
           test -f evidence/fret-ogma/control/copilot-generated/monitor.c
           test -f evidence/fret-ogma/control/copilot-generated/monitor.h
+          ghc -fforce-recomp -fno-code evidence/fret-ogma/method/copilot-generated/Copilot.hs \
+            2>&1 | tee evidence/fret-ogma/method/ghc.log
+          (
+            cd evidence/fret-ogma/method/copilot-generated
+            runghc Copilot.hs 2>&1 | tee ../copilot-cgen.log
+          )
+          test -f evidence/fret-ogma/method/copilot-generated/monitor.c
+          test -f evidence/fret-ogma/method/copilot-generated/monitor.h
 
       - name: Compile generated C99 monitor with independent replay harness
         shell: bash
@@ -151,6 +205,15 @@ jobs:
           for case in 0 1 2; do
             evidence/fret-ogma/control/native-replay "$case" \
               | tee "evidence/fret-ogma/control/native-case-$case.log"
+          done
+          gcc -std=c99 -Wall -Wextra -Werror -pedantic \
+            -I evidence/fret-ogma/method/copilot-generated \
+            lab/research/fret_lpc_copilot_replay.c \
+            evidence/fret-ogma/method/copilot-generated/monitor.c \
+            -o evidence/fret-ogma/method/native-replay
+          for case in 0 1 2; do
+            evidence/fret-ogma/method/native-replay "$case" \
+              | tee "evidence/fret-ogma/method/native-case-$case.log"
           done
 
       - name: Preserve native inputs, compiler outputs, verdicts and negatives
