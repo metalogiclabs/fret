@@ -8,6 +8,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 
@@ -18,6 +19,22 @@ SAFE_NAME = re.compile(r"[A-Za-z0-9_.-]+\Z")
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def locate_ogma_binary(ogma_project: Path) -> Path:
+    """Find exactly one executable built by the pinned cabal ogma-cli target.
+
+    Cabal list-bin may mix status diagnostics into stdout. Inspect actual
+    build output rather than treating console text as an executable path.
+    """
+    glob = "dist-newstyle/build/*/*/ogma-cli-*/x/ogma/build/ogma/ogma"
+    candidates = sorted(
+        path.resolve() for path in ogma_project.glob(glob)
+        if path.is_file() and os.access(path, os.X_OK)
+    )
+    if len(candidates) != 1:
+        raise ValueError(f"Expected exactly one Ogma CLI executable, got {len(candidates)}")
+    return candidates[0]
 
 
 def split(source: Path, destination: Path) -> dict:
@@ -120,6 +137,9 @@ def main():
     reporter.add_argument("--manifest", type=Path, required=True)
     reporter.add_argument("--statuses", type=Path, required=True)
     reporter.add_argument("--out", type=Path, required=True)
+    finder = subs.add_parser("locate")
+    finder.add_argument("--ogma-dir", type=Path, required=True)
+    finder.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     if args.operation == "split":
         actual_hash = sha256(args.input.read_bytes())
@@ -128,13 +148,18 @@ def main():
         receipt = split(args.input, args.out)
         print(f"Isolated {receipt['requirements']} exact requirements, {receipt['otherVariables']} variables; "
               f"source={receipt['fullSourceSha256']}")
-    else:
+    elif args.operation == "report":
         receipt = json.loads(args.manifest.read_text(encoding="utf-8"))
         report = classify(receipt, args.statuses)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(f"Native Ogma translation: {report['translated']}/{report['requirements']} translated; "
               f"{report['notTranslated']} not translated")
+    else:
+        binary = locate_ogma_binary(args.ogma_dir)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(str(binary) + "\n", encoding="utf-8")
+        print(f"Resolved unique built Ogma CLI: {binary}")
 
 
 if __name__ == "__main__":

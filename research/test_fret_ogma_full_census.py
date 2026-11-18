@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from fret_ogma_full_census import classify, split
+from fret_ogma_full_census import classify, locate_ogma_binary, split
 
 
 class FullCensusTests(unittest.TestCase):
@@ -84,6 +84,25 @@ class FullCensusTests(unittest.TestCase):
                           f"1\t{receipt['items'][1]['file']}\t0\t1\n", encoding="utf-8")
         with self.assertRaises(ValueError):
             classify(receipt, status)
+
+    def test_locate_single_pinned_cabal_build_executable(self):
+        ogma = self.work / "ogma"
+        binary = ogma / "dist-newstyle/build/x86_64-linux/ghc-9.2.8/ogma-cli-1.16.0/x/ogma/build/ogma/ogma"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        binary.chmod(0o755)
+        self.assertEqual(locate_ogma_binary(ogma), binary.resolve())
+        # A second toolchain candidate must not be chosen arbitrarily.
+        twin = ogma / "dist-newstyle/build/x86_64-linux/ghc-9.4.0/ogma-cli-1.16.0/x/ogma/build/ogma/ogma"
+        twin.parent.mkdir(parents=True)
+        twin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        twin.chmod(0o755)
+        with self.assertRaises(ValueError):
+            locate_ogma_binary(ogma)
+        twin.unlink()
+        binary.chmod(0o644)
+        with self.assertRaises(ValueError):
+            locate_ogma_binary(ogma)
 
 
 if __name__ == "__main__":
