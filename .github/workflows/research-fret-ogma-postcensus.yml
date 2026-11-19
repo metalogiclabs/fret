@@ -1,0 +1,156 @@
+name: Research - FRET Ogma postcensus source-qualified diagnostics
+
+on:
+  push:
+    branches:
+      - research/fret-export-method-ogma-20261118
+    paths:
+      - .github/workflows/research-fret-ogma-postcensus.yml
+      - research/fret_ogma_postcensus.py
+      - research/test_fret_ogma_postcensus.py
+      - research/fret_kias_copilot_replay.c
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postcensus_native_controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out isolated Metalogic research fork
+        uses: actions/checkout@v4
+        with:
+          path: lab
+          persist-credentials: false
+
+      - name: Check out immutable NASA FRET source
+        uses: actions/checkout@v4
+        with:
+          repository: NASA-SW-VnV/fret
+          ref: cf0f913cc15c41705e803593297e89cd6056b839
+          path: fret
+          persist-credentials: false
+
+      - name: Check out immutable NASA Ogma source
+        uses: actions/checkout@v4
+        with:
+          repository: nasa/ogma
+          ref: 1f8355712aba76b4047ccb4b1f4cead1b6cdb42a
+          path: ogma-source
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Source-exact method replay and validated derived controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s lab/research -p test_fret_ogma_postcensus.py -v
+          node lab/research/run_fret_export_method.cjs --fret fret --out evidence/postcensus/method
+          python3 lab/research/fret_ogma_postcensus.py \
+            --input evidence/postcensus/method/method-full-project.json \
+            --out evidence/postcensus/derived \
+            | tee evidence/postcensus/derived-control-stdout.json
+          sha256sum evidence/postcensus/method/method-full-project.json \
+            evidence/postcensus/derived/*.json \
+            | tee evidence/postcensus/input-sha256.log
+
+      - name: Configure supported GHC and Cabal
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.2.8'
+          cabal-version: '3.14'
+
+      - name: Install native prerequisites and update Cabal index
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libbz2-dev libexpat1-dev z3 alex happy pkg-config zlib1g-dev binutils binutils-gold
+          cabal update
+
+      - name: Build pinned NASA Ogma
+        working-directory: ogma-source
+        run: cabal build ogma-cli:exe:ogma --jobs=2
+
+      - name: Translate every source-qualified control independently
+        working-directory: ogma-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          for input in ../evidence/postcensus/derived/0??-*.json; do
+            name="$(basename "$input" .json)"
+            out="../evidence/postcensus/native/$name"
+            mkdir -p "$out"
+            set +e
+            cabal run ogma-cli:exe:ogma -- standalone \
+              --input-format ogma-core/data/formats/fcs_lustre \
+              --prop-format lustre \
+              --input-file "$input" \
+              --target-dir "$out" >"$out/ogma.log" 2>&1
+            status=$?
+            set -e
+            printf '%d\n' "$status" >"$out/ogma-exit.txt"
+            printf '%s: Ogma exit=%d Copilot.hs=%s\n' \
+              "$name" "$status" "$(test -f "$out/Copilot.hs" && echo YES || echo NO)"
+          done
+          test -f ../evidence/postcensus/native/047-original/Copilot.hs
+          test -f ../evidence/postcensus/native/047-assigned-control/Copilot.hs
+          test "$(cat ../evidence/postcensus/native/040-original/ogma-exit.txt)" -ne 0
+          test "$(cat ../evidence/postcensus/native/047-assigned-control/ogma-exit.txt)" -eq 0
+
+      - name: Install proven Copilot C99 library versions
+        shell: bash
+        run: |
+          cabal v2-install --lib --jobs=2 --disable-optimization \
+            copilot-4.7.1 copilot-c99-4.7.1 \
+            copilot-language-4.7.1 copilot-libraries-4.7.1
+
+      - name: Check negative original and compile derived KIAS control
+        shell: bash
+        run: |
+          set -euo pipefail
+          orig=evidence/postcensus/native/047-original
+          derived=evidence/postcensus/native/047-assigned-control
+          set +e
+          ghc -fforce-recomp -fno-code "$orig/Copilot.hs" >"$orig/ghc.log" 2>&1
+          orig_status=$?
+          set -e
+          printf '%d\n' "$orig_status" >"$orig/ghc-exit.txt"
+          test "$orig_status" -ne 0
+          ghc -fforce-recomp -fno-code "$derived/Copilot.hs" 2>&1 | tee "$derived/ghc.log"
+          (
+            cd "$derived"
+            runghc Copilot.hs 2>&1 | tee copilot-cgen.log
+          )
+          test -f "$derived/monitor.c"
+          test -f "$derived/monitor.h"
+
+      - name: Independently replay exact-zero and negative KIAS boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          derived=evidence/postcensus/native/047-assigned-control
+          gcc -std=c99 -Wall -Wextra -Werror -pedantic \
+            -I "$derived" lab/research/fret_kias_copilot_replay.c \
+            "$derived/monitor.c" -o "$derived/native-replay"
+          for case in 0 1 2 3; do
+            "$derived/native-replay" "$case" | tee "$derived/native-case-$case.log"
+          done
+          grep -q 'observed-source-difference=NO' "$derived/native-case-2.log"
+          grep -q 'observed-source-difference=YES' "$derived/native-case-3.log"
+          printf 'WARRANTED BOUNDARY WITNESS: native original >= 0.0 contract disagrees at equality\n' \
+            | tee "$derived/witness-classification.log"
+
+      - name: Preserve translations, failed controls and native verdict evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fret-ogma-postcensus-derived-controls-20261119
+          path: evidence/postcensus/
+          if-no-files-found: warn
+          retention-days: 30
